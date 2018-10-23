@@ -9,6 +9,9 @@
 
 # Note: this function signature and behavior is depended upon by applocal.ps1
 function deployPluginsIfQt([string]$targetBinaryDir, [string]$QtPluginsDir, [string]$targetBinaryName) {
+        Write-Host "targetBinaryDir=$targetBinaryDir"
+        Write-Host "QtPluginsDir=$QtPluginsDir"
+        Write-Host "targetBinaryName=$targetBinaryName"
 
     $baseDir = Split-Path $QtPluginsDir -parent
     $binDir = "$baseDir\bin"
@@ -19,7 +22,7 @@ function deployPluginsIfQt([string]$targetBinaryDir, [string]$QtPluginsDir, [str
             New-Item "$targetBinaryDir\$pluginSubdirName" -ItemType Directory -ErrorAction SilentlyContinue | Out-Null
             Get-ChildItem "$QtPluginsDir\$pluginSubdirName\*.dll" | % {
                 deployBinary "$targetBinaryDir\$pluginSubdirName" "$QtPluginsDir\$pluginSubdirName" $_.Name
-                resolve $_
+                resolve "$targetBinaryDir\$pluginSubdirName\$($_.Name)"
             }
         } else {
             Write-Verbose "  Skipping plugins directory '$pluginSubdirName': doesn't exist"
@@ -27,7 +30,11 @@ function deployPluginsIfQt([string]$targetBinaryDir, [string]$QtPluginsDir, [str
     }
 
     # We detect Qt modules in use via the DLLs themselves. See qtModuleEntries in Qt to find the mapping.
-    if ($targetBinaryName -like "Qt5Gui*.dll") {
+    if ($targetBinaryName -like "Qt5Core*.dll") {
+        if (!(Test-Path "$targetBinaryDir\qt.conf")) {
+            "[Paths]" | Out-File -encoding ascii "$targetBinaryDir\qt.conf"
+        }
+    } elseif ($targetBinaryName -like "Qt5Gui*.dll") {
         Write-Verbose "  Deploying platforms"
         New-Item "$targetBinaryDir\platforms" -ItemType Directory -ErrorAction SilentlyContinue | Out-Null
         Get-ChildItem "$QtPluginsDir\platforms\qwindows*.dll" | % {
@@ -53,7 +60,25 @@ function deployPluginsIfQt([string]$targetBinaryDir, [string]$QtPluginsDir, [str
         deployPlugins "playlistformats"
     } elseif ($targetBinaryName -like "Qt5PrintSupport*.dll") {
         deployPlugins "printsupport"
-    } elseif ($targetBinaryName -like "Qt5Quick*.dll") {
+    } elseif ($targetBinaryName -match "Qt5Qmld?.dll") {
+        if(!(Test-Path "$targetBinaryDir\qml"))
+        {
+            if (Test-Path "$binDir\..\qml") {
+                cp -r "$binDir\..\qml" $targetBinaryDir
+            } elseif (Test-Path "$binDir\..\..\qml") {
+                cp -r "$binDir\..\..\qml" $targetBinaryDir
+            } else {
+                throw "FAILED"
+            }
+        }
+    } elseif ($targetBinaryName -match "Qt5Quickd?.dll") {
+        foreach ($a in @("Qt5QuickControls2", "Qt5QuickControls2d", "Qt5QuickTemplates2", "Qt5QuickTemplates2d"))
+        {
+            if (Test-Path "$binDir\$a.dll")
+            {
+                deployBinary "$targetBinaryDir" "$binDir" "$a.dll"
+            }
+        }
         deployPlugins "scenegraph"
         deployPlugins "qmltooling"
     } elseif ($targetBinaryName -like "Qt5Declarative*.dll") {
