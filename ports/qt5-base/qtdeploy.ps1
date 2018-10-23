@@ -27,7 +27,11 @@ function deployPluginsIfQt([string]$targetBinaryDir, [string]$QtPluginsDir, [str
     }
 
     # We detect Qt modules in use via the DLLs themselves. See qtModuleEntries in Qt to find the mapping.
-    if ($targetBinaryName -like "Qt5Gui*.dll") {
+    if ($targetBinaryName -like "Qt5Core*.dll") {
+        if (!(Test-Path "$targetBinaryDir\qt.conf")) {
+            "[Paths]" | Out-File -encoding ascii "$targetBinaryDir\qt.conf"
+        }
+    } elseif ($targetBinaryName -like "Qt5Gui*.dll") {
         Write-Verbose "  Deploying platforms"
         New-Item "$targetBinaryDir\platforms" -ItemType Directory -ErrorAction SilentlyContinue | Out-Null
         Get-ChildItem "$QtPluginsDir\platforms\qwindows*.dll" | % {
