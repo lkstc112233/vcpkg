@@ -1,19 +1,35 @@
-include(vcpkg_common_functions)
 vcpkg_from_github(
     OUT_SOURCE_PATH SOURCE_PATH
     REPO nih-at/libzip
-    REF rel-1-5-1
-    SHA512 778f438f6354f030656baa5497b3154ad8fb764011d2a6925136f32e06dc0dcd1ed93fe05dbf7be619004a68cdabe5e34a83b988c1501ed67e9cfa4fa540350f
+    REF rel-1-6-1
+    SHA512 7ee414c063f9f76bec7d96ff9dadbc4be8d37a7b907b977882bf40f8ab66f0e46d3b8f70083c7bd272cc298d855d0d72b494b5772f26e1f4ff7ffeefe780adaf
     HEAD_REF master
-    PATCHES cmake_dont_build_more_than_needed.patch
+)
+
+vcpkg_check_features(
+    OUT_FEATURE_OPTIONS FEATURE_OPTIONS
+    bzip2 ENABLE_BZIP2
+    liblzma ENABLE_LZMA
+    openssl ENABLE_OPENSSL
+    wincrypto ENABLE_WINDOWS_CRYPTO
+    commoncrypto ENABLE_COMMONCRYPTO
+    mbedtls ENABLE_MBEDTLS
 )
 
 vcpkg_configure_cmake(
     SOURCE_PATH ${SOURCE_PATH}
     PREFER_NINJA
+    OPTIONS
+        ${FEATURE_OPTIONS}
+        -DBUILD_DOC=OFF
+        -DBUILD_EXAMPLES=OFF
+        -DBUILD_REGRESS=OFF
+        -DBUILD_TOOLS=OFF
+        -DENABLE_GNUTLS=OFF
 )
 
 vcpkg_install_cmake()
+vcpkg_copy_pdbs()
 
 # Remove include directories from lib
 file(REMOVE_RECURSE ${CURRENT_PACKAGES_DIR}/lib/libzip ${CURRENT_PACKAGES_DIR}/debug/lib/libzip)
@@ -22,6 +38,4 @@ file(REMOVE_RECURSE ${CURRENT_PACKAGES_DIR}/lib/libzip ${CURRENT_PACKAGES_DIR}/d
 file(REMOVE_RECURSE ${CURRENT_PACKAGES_DIR}/debug/include)
 
 # Copy copright information
-file(INSTALL ${SOURCE_PATH}/LICENSE DESTINATION ${CURRENT_PACKAGES_DIR}/share/libzip RENAME copyright)
-
-vcpkg_copy_pdbs()
+file(INSTALL ${SOURCE_PATH}/LICENSE DESTINATION ${CURRENT_PACKAGES_DIR}/share/${PORT} RENAME copyright)

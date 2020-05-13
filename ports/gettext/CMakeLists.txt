@@ -3,8 +3,6 @@ project(libintl C)
 
 find_package(unofficial-iconv REQUIRED)
 
-include_directories(${CMAKE_CURRENT_BINARY_DIR}/config .)
-
 set(CMAKE_STATIC_LIBRARY_PREFIX)
 set(CMAKE_SHARED_LIBRARY_PREFIX)
 
@@ -23,6 +21,7 @@ else()
     set(HAVE_ASPRINTF 1)
     set(HAVE_WPRINTF 1)
     set(HAVE_NEWLOCALE 1)
+    add_definitions(-DHAVE_NEWLOCALE=1)
     add_definitions(-DHAVE_NEWLOCALE=1)
 
     set(CMAKE_THREAD_PREFER_PTHREAD TRUE)
@@ -103,10 +102,16 @@ if(BUILD_SHARED_LIBS)
 endif()
 add_definitions("-DBUILDING_LIBINTL -DIN_LIBINTL -DENABLE_RELOCATABLE=1 -DIN_LIBRARY")
 
-add_definitions("-DNO_XMALLOC -Dset_relocation_prefix=libintl_set_relocation_prefix -Drelocate=libintl_relocate -DDEPENDS_ON_LIBICONV=1 -DHAVE_CONFIG_H -D_CRT_SECURE_NO_WARNINGS")
+add_definitions("-DNO_XMALLOC -Dset_relocation_prefix=libintl_set_relocation_prefix -Drelocate=libintl_relocate -DDEPENDS_ON_LIBICONV=1 -DHAVE_CONFIG_H -DHAVE_ICONV -DHAVE_ICONV_H -DICONV_CONST=const -D_CRT_SECURE_NO_WARNINGS")
 
 add_library(libintl ${SOURCES})
 target_link_libraries(libintl PRIVATE unofficial::iconv::libcharset unofficial::iconv::libiconv)
+
+target_include_directories(libintl PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/config>
+    $<INSTALL_INTERFACE:include>
+)
+
 if(APPLE)
     find_library(COREFOUNDATION_LIBRARY CoreFoundation REQUIRED)
     target_link_libraries(libintl PRIVATE ${COREFOUNDATION_LIBRARY})
@@ -114,10 +119,32 @@ endif()
 if(NOT WIN32)
     target_link_libraries(libintl PRIVATE Threads::Threads)
 endif()
+if (WIN32)
+    target_link_libraries(libintl PRIVATE kernel32.lib Advapi32.lib)
+endif()
 
 install(TARGETS libintl
+  EXPORT unofficial-gettext-targets
   RUNTIME DESTINATION bin
-  LIBRARY DESTINATION bin
+  LIBRARY DESTINATION lib
   ARCHIVE DESTINATION lib
 )
 
+install(
+    EXPORT unofficial-gettext-targets
+    FILE unofficial-gettext-targets.cmake
+    NAMESPACE unofficial::gettext::
+    DESTINATION share/unofficial-gettext
+)
+
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/unofficial-gettext-config.cmake" "
+include(CMakeFindDependencyMacro)
+find_dependency(unofficial-iconv)
+find_dependency(Threads)
+include(\${CMAKE_CURRENT_LIST_DIR}/unofficial-gettext-targets.cmake)
+")
+
+install(
+    FILES ${CMAKE_CURRENT_BINARY_DIR}/unofficial-gettext-config.cmake
+    DESTINATION share/unofficial-gettext
+)

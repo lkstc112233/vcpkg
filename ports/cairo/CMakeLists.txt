@@ -160,6 +160,7 @@ endif()
 
 set(CMAKE_DEBUG_POSTFIX "d")
 
+find_package(Threads REQUIRED)
 find_package(ZLIB REQUIRED)
 find_package(PNG REQUIRED)
 find_package(Freetype REQUIRED)
@@ -176,7 +177,7 @@ add_definitions(
     -DHAVE_FT_GET_X11_FONT_FORMAT=1)
 
 # additional features for macOS
-if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+if((CMAKE_SYSTEM_NAME STREQUAL "Darwin") OR (CMAKE_SYSTEM_NAME STREQUAL "Linux"))
   add_definitions(
       -DHAVE_INTTYPES_H=1
       -DHAVE_STDINT_H=1
@@ -189,7 +190,15 @@ endif()
 
 add_library(cairo ${SOURCES})
 
-target_link_libraries(cairo PRIVATE gdi32 msimg32 user32 ZLIB::ZLIB PNG::PNG Freetype::Freetype unofficial::pixman::pixman-1 unofficial::fontconfig::fontconfig)
+if (WITH_X11)
+    target_compile_definitions(cairo PUBLIC -DCAIRO_HAS_XLIB_SURFACE=1)
+endif()
+
+target_link_libraries(cairo PRIVATE ZLIB::ZLIB PNG::PNG Freetype::Freetype unofficial::pixman::pixman-1 unofficial::fontconfig::fontconfig)
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+    target_link_libraries(cairo PRIVATE gdi32 msimg32 user32)
+endif()
 
 # GObject support module
 
@@ -199,10 +208,17 @@ set(CAIRO_GOBJECT_SOURCES
 
 # GObject support sources do not include header with export macro
 if(BUILD_SHARED_LIBS)
-    set_source_files_properties(
-        "../util/cairo-gobject/cairo-gobject-enums.c"
+    if(MSVC)
+        set_source_files_properties(
+              "../util/cairo-gobject/cairo-gobject-enums.c"
         "../util/cairo-gobject/cairo-gobject-structs.c"
         PROPERTIES COMPILE_DEFINITIONS "cairo_public=__declspec(dllexport)")
+    else()
+        set_source_files_properties(
+              "../util/cairo-gobject/cairo-gobject-enums.c"
+        "../util/cairo-gobject/cairo-gobject-structs.c"
+        PROPERTIES COMPILE_DEFINITIONS "cairo_public=__attribute__((visibility(\"default\")))")
+    endif()
 endif()
 
 add_library(cairo-gobject ${CAIRO_GOBJECT_SOURCES}) 
@@ -217,6 +233,10 @@ if(MSVC)
     target_compile_options(cairo-gobject PRIVATE
         "/wd4244" "/wd4146" "/wd4312" "/wd4267" "/wd4996" "/wd4311" "/wd4334" "/wd4101"
     )
+endif()
+
+if (CAIRO_HAS_XLIB_SURFACE)
+    file(INSTALL cairo-xlib.h DESTINATION include)
 endif()
 
 install(TARGETS cairo cairo-gobject

@@ -1,20 +1,19 @@
-include(vcpkg_common_functions)
-
-if(NOT VCPKG_CMAKE_SYSTEM_NAME OR VCPKG_CMAKE_SYSTEM_NAME STREQUAL "WindowsStore")
-  vcpkg_check_linkage(ONLY_DYNAMIC_LIBRARY)
-endif()
+vcpkg_fail_port_install(ON_ARCH "arm" "arm64" ON_TARGET "uwp")
 
 vcpkg_from_github(
     OUT_SOURCE_PATH SOURCE_PATH
-    REPO 01org/tbb
-    REF 2018_U6
-    SHA512 efcd020a24fa41e07ff9232098cecce42ceec5882849bc30edc29ead1694fcc8820a0defb307e0a065c1db1d649a731e13d8cb6fd6f927b4bd3bdc46de0d1709
-    HEAD_REF tbb_2018
+    REPO oneapi-src/oneTBB
+    REF 427c252e0bb9e191767a62d8a744b21950c343f6 # 2020_U1
+    SHA512 01307b689680c8d796357a65258257b0c54336aa2a5dc75746d65e169988b8cb353537ad480cc4b8970b32667ab7f965bfedee4a15186f2a3159c9f130667f26
+    HEAD_REF tbb_2019
+    PATCHES
+        fix-static-build.patch
+        terminate-when-buildtool-notfound.patch
 )
 
 file(COPY ${CMAKE_CURRENT_LIST_DIR}/CMakeLists.txt DESTINATION ${SOURCE_PATH})
 
-if(VCPKG_CMAKE_SYSTEM_NAME AND NOT VCPKG_CMAKE_SYSTEM_NAME STREQUAL "WindowsStore")
+if (NOT VCPKG_TARGET_IS_WINDOWS)
     vcpkg_configure_cmake(
         SOURCE_PATH ${SOURCE_PATH}
         PREFER_NINJA
@@ -22,7 +21,7 @@ if(VCPKG_CMAKE_SYSTEM_NAME AND NOT VCPKG_CMAKE_SYSTEM_NAME STREQUAL "WindowsStor
 
     vcpkg_install_cmake()
 
-    # Settings for TBBConfigForSource.cmake.in
+    # Settings for TBBConfigInternal.cmake.in
     set(TBB_LIB_EXT a)
     set(TBB_LIB_PREFIX lib)
 else()
@@ -33,6 +32,32 @@ else()
         set(RELEASE_CONFIGURATION Release)
         set(DEBUG_CONFIGURATION Debug)
     endif()
+    
+    macro(CONFIGURE_PROJ_FILE arg)
+        set(CONFIGURE_FILE_NAME ${arg})
+        set(CONFIGURE_BAK_FILE_NAME ${arg}.bak)
+        if (NOT EXISTS ${CONFIGURE_BAK_FILE_NAME})
+            configure_file(${CONFIGURE_FILE_NAME} ${CONFIGURE_BAK_FILE_NAME} COPYONLY)
+        endif()
+        configure_file(${CONFIGURE_BAK_FILE_NAME} ${CONFIGURE_FILE_NAME} COPYONLY)
+        if (VCPKG_LIBRARY_LINKAGE STREQUAL static)
+            file(READ ${CONFIGURE_FILE_NAME} SLN_CONFIGURE)
+            string(REPLACE "<ConfigurationType>DynamicLibrary<\/ConfigurationType>"
+                        "<ConfigurationType>StaticLibrary<\/ConfigurationType>" SLN_CONFIGURE "${SLN_CONFIGURE}")
+            string(REPLACE "\/D_CRT_SECURE_NO_DEPRECATE"
+                        "\/D_CRT_SECURE_NO_DEPRECATE \/DIN_CILK_STATIC" SLN_CONFIGURE "${SLN_CONFIGURE}")
+            file(WRITE ${CONFIGURE_FILE_NAME} "${SLN_CONFIGURE}")
+        else()
+            file(READ ${CONFIGURE_FILE_NAME} SLN_CONFIGURE)
+            string(REPLACE "\/D_CRT_SECURE_NO_DEPRECATE"
+                        "\/D_CRT_SECURE_NO_DEPRECATE \/DIN_CILK_RUNTIME" SLN_CONFIGURE "${SLN_CONFIGURE}")
+            file(WRITE ${CONFIGURE_FILE_NAME} "${SLN_CONFIGURE}")
+        endif()
+    endmacro()
+    
+    CONFIGURE_PROJ_FILE(${SOURCE_PATH}/build/vs2013/tbb.vcxproj)
+    CONFIGURE_PROJ_FILE(${SOURCE_PATH}/build/vs2013/tbbmalloc.vcxproj)
+    CONFIGURE_PROJ_FILE(${SOURCE_PATH}/build/vs2013/tbbmalloc_proxy.vcxproj)
 
     vcpkg_install_msbuild(
         SOURCE_PATH ${SOURCE_PATH}
@@ -40,7 +65,7 @@ else()
         RELEASE_CONFIGURATION ${RELEASE_CONFIGURATION}
         DEBUG_CONFIGURATION ${DEBUG_CONFIGURATION}
     )
-    # Settings for TBBConfigForSource.cmake.in
+    # Settings for TBBConfigInternal.cmake.in
     set(TBB_LIB_EXT lib)
     set(TBB_LIB_PREFIX)
 endif()
@@ -50,12 +75,13 @@ file(COPY
   ${SOURCE_PATH}/include/serial
   DESTINATION ${CURRENT_PACKAGES_DIR}/include)
 
-# Settings for TBBConfigForSource.cmake.in
+# Settings for TBBConfigInternal.cmake.in
 if(VCPKG_LIBRARY_LINKAGE STREQUAL "static")
     set(TBB_DEFAULT_COMPONENTS tbb tbbmalloc)
 else()
     set(TBB_DEFAULT_COMPONENTS tbb tbbmalloc tbbmalloc_proxy)
 endif()
+
 file(READ "${SOURCE_PATH}/include/tbb/tbb_stddef.h" _tbb_stddef)
 string(REGEX REPLACE ".*#define TBB_VERSION_MAJOR ([0-9]+).*" "\\1" _tbb_ver_major "${_tbb_stddef}")
 string(REGEX REPLACE ".*#define TBB_VERSION_MINOR ([0-9]+).*" "\\1" _tbb_ver_minor "${_tbb_stddef}")
@@ -65,7 +91,7 @@ set(TBB_RELEASE_DIR "\${_tbb_root}/lib")
 set(TBB_DEBUG_DIR "\${_tbb_root}/debug/lib")
 
 configure_file(
-    ${SOURCE_PATH}/cmake/templates/TBBConfigForSource.cmake.in
+    ${SOURCE_PATH}/cmake/templates/TBBConfigInternal.cmake.in
     ${CURRENT_PACKAGES_DIR}/share/tbb/TBBConfig.cmake
     @ONLY
 )
@@ -76,11 +102,21 @@ string(REPLACE
     _contents
     "${_contents}"
 )
+string(REPLACE
+    "set(_tbb_release_lib \"/${TBB_LIB_PREFIX}"
+    "set(_tbb_release_lib \"\${_tbb_root}/lib/${TBB_LIB_PREFIX}"
+    _contents
+    "${_contents}"
+)
+string(REPLACE
+    "set(_tbb_debug_lib \"/${TBB_LIB_PREFIX}"
+    "set(_tbb_debug_lib \"\${_tbb_root}/debug/lib/${TBB_LIB_PREFIX}"
+    _contents
+    "${_contents}"
+)
 string(REPLACE "SHARED IMPORTED)" "UNKNOWN IMPORTED)" _contents "${_contents}")
 file(WRITE ${CURRENT_PACKAGES_DIR}/share/tbb/TBBConfig.cmake "${_contents}")
 
+file(COPY ${CMAKE_CURRENT_LIST_DIR}/usage DESTINATION ${CURRENT_PACKAGES_DIR}/share/tbb)
 # Handle copyright
-file(COPY ${SOURCE_PATH}/LICENSE ${CMAKE_CURRENT_LIST_DIR}/usage DESTINATION ${CURRENT_PACKAGES_DIR}/share/tbb)
-file(RENAME ${CURRENT_PACKAGES_DIR}/share/tbb/LICENSE ${CURRENT_PACKAGES_DIR}/share/tbb/copyright)
-
-vcpkg_test_cmake(PACKAGE_NAME TBB)
+file(INSTALL ${SOURCE_PATH}/LICENSE DESTINATION ${CURRENT_PACKAGES_DIR}/share/${PORT} RENAME copyright)

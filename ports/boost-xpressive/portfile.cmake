@@ -5,8 +5,8 @@ include(vcpkg_common_functions)
 vcpkg_from_github(
     OUT_SOURCE_PATH SOURCE_PATH
     REPO boostorg/xpressive
-    REF boost-1.68.0
-    SHA512 3038a336a13232e567e1017b005bb6b95ffbc7ad0bcb55385afb33ba545d0d860edd79e1902263cd4e99703c75ca6d57d06be95ddec430f3b54b1f31fb05b84d
+    REF boost-1.72.0
+    SHA512 214ab38c493a53b97c2f153d2c45b71ddf9b06995af781f51e814c0b03526a9be402aeb5bcbcf69baaea49df760fa79b6d8abc5b91744afb4bc2e6be7a04a1a3
     HEAD_REF master
 )
 

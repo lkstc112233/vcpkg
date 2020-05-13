@@ -1,10 +1,21 @@
 # Mark variables as used so cmake doesn't complain about them
 mark_as_advanced(CMAKE_TOOLCHAIN_FILE)
 
-# This is a backport of CMAKE_TRY_COMPILE_PLATFORM_VARIABLES to cmake 3.0
-get_property( _CMAKE_IN_TRY_COMPILE GLOBAL PROPERTY IN_TRY_COMPILE )
-if( _CMAKE_IN_TRY_COMPILE )
-    include( "${CMAKE_CURRENT_SOURCE_DIR}/../vcpkg.config.cmake" OPTIONAL )
+# VCPKG toolchain options. 
+option(VCPKG_VERBOSE "Enables messages from the VCPKG toolchain for debugging purposes." OFF)
+mark_as_advanced(VCPKG_VERBOSE)
+
+# Determine whether the toolchain is loaded during a try-compile configuration
+get_property(_CMAKE_IN_TRY_COMPILE GLOBAL PROPERTY IN_TRY_COMPILE)
+
+if (${CMAKE_VERSION} VERSION_LESS "3.6.0")
+    set(_CMAKE_EMULATE_TRY_COMPILE_PLATFORM_VARIABLES ON)
+else()
+    set(_CMAKE_EMULATE_TRY_COMPILE_PLATFORM_VARIABLES OFF)
+endif()
+
+if(_CMAKE_IN_TRY_COMPILE AND _CMAKE_EMULATE_TRY_COMPILE_PLATFORM_VARIABLES)
+    include("${CMAKE_CURRENT_SOURCE_DIR}/../vcpkg.config.cmake" OPTIONAL)
 endif()
 
 if(VCPKG_CHAINLOAD_TOOLCHAIN_FILE)
@@ -13,6 +24,22 @@ endif()
 
 if(VCPKG_TOOLCHAIN)
     return()
+endif()
+
+#If CMake does not have a mapping for MinSizeRel and RelWithDebInfo in imported targets
+#it will map those configuration to the first valid configuration in CMAKE_CONFIGURATION_TYPES or the targets IMPORTED_CONFIGURATIONS.
+#In most cases this is the debug configuration which is wrong. 
+if(NOT DEFINED CMAKE_MAP_IMPORTED_CONFIG_MINSIZEREL)
+    set(CMAKE_MAP_IMPORTED_CONFIG_MINSIZEREL "MinSizeRel;Release;")
+    if(VCPKG_VERBOSE)
+        message(STATUS "VCPKG-Info: CMAKE_MAP_IMPORTED_CONFIG_MINSIZEREL set to MinSizeRel;Release;")
+    endif()
+endif()
+if(NOT DEFINED CMAKE_MAP_IMPORTED_CONFIG_RELWITHDEBINFO)
+    set(CMAKE_MAP_IMPORTED_CONFIG_RELWITHDEBINFO "RelWithDebInfo;Release;")
+    if(VCPKG_VERBOSE)
+        message(STATUS "VCPKG-Info: CMAKE_MAP_IMPORTED_CONFIG_RELWITHDEBINFO set to RelWithDebInfo;Release;")
+    endif()
 endif()
 
 if(VCPKG_TARGET_TRIPLET)
@@ -37,6 +64,8 @@ else()
         set(_VCPKG_TARGET_TRIPLET_ARCH arm)
     elseif(CMAKE_GENERATOR MATCHES "^Visual Studio 15 2017$")
         set(_VCPKG_TARGET_TRIPLET_ARCH x86)
+    elseif(CMAKE_GENERATOR MATCHES "^Visual Studio 16 2019$")
+        set(_VCPKG_TARGET_TRIPLET_ARCH x64)
     else()
         find_program(_VCPKG_CL cl)
         if(_VCPKG_CL MATCHES "amd64/cl.exe$" OR _VCPKG_CL MATCHES "x64/cl.exe$")
@@ -47,10 +76,47 @@ else()
             set(_VCPKG_TARGET_TRIPLET_ARCH arm64)
         elseif(_VCPKG_CL MATCHES "bin/cl.exe$" OR _VCPKG_CL MATCHES "x86/cl.exe$")
             set(_VCPKG_TARGET_TRIPLET_ARCH x86)
+        elseif(CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin" AND DEFINED CMAKE_SYSTEM_NAME AND NOT CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+            list(LENGTH CMAKE_OSX_ARCHITECTURES arch_count)
+            if(arch_count EQUAL 0)
+                message(WARNING "Unable to determine target architecture. "
+                                "Consider providing a value for the CMAKE_OSX_ARCHITECTURES cache variable. "
+                                "Continuing without vcpkg.")
+                set(VCPKG_TOOLCHAIN ON)
+                return()
+            else()
+                if(arch_count GREATER 1)
+                    message(WARNING "Detected more than one target architecture. Using the first one.")
+                endif()
+                list(GET CMAKE_OSX_ARCHITECTURES 0 target_arch)
+                if(target_arch STREQUAL arm64)
+                    set(_VCPKG_TARGET_TRIPLET_ARCH arm64)
+                elseif(target_arch STREQUAL arm64s)
+                    set(_VCPKG_TARGET_TRIPLET_ARCH arm64s)
+                elseif(target_arch STREQUAL armv7s)
+                    set(_VCPKG_TARGET_TRIPLET_ARCH armv7s)
+                elseif(target_arch STREQUAL armv7)
+                    set(_VCPKG_TARGET_TRIPLET_ARCH arm)
+                elseif(target_arch STREQUAL x86_64)
+                    set(_VCPKG_TARGET_TRIPLET_ARCH x64)
+                elseif(target_arch STREQUAL i386)
+                    set(_VCPKG_TARGET_TRIPLET_ARCH x86)
+                else()
+                    message(WARNING "Unable to determine target architecture, continuing without vcpkg.")
+                    set(VCPKG_TOOLCHAIN ON)
+                    return()
+                endif()
+            endif()
         elseif(CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL "x86_64")
             set(_VCPKG_TARGET_TRIPLET_ARCH x64)
         else()
-            message(FATAL_ERROR "Unable to determine target architecture.")
+            if( _CMAKE_IN_TRY_COMPILE )
+                message(STATUS "Unable to determine target architecture, continuing without vcpkg.")
+            else()
+                message(WARNING "Unable to determine target architecture, continuing without vcpkg.")
+            endif()
+            set(VCPKG_TOOLCHAIN ON)
+            return()
         endif()
     endif()
 endif()
@@ -61,6 +127,8 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR (NOT CMAKE_SYSTEM_NAME AND CMAKE_HO
     set(_VCPKG_TARGET_TRIPLET_PLAT linux)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin" OR (NOT CMAKE_SYSTEM_NAME AND CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin"))
     set(_VCPKG_TARGET_TRIPLET_PLAT osx)
+elseif(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    set(_VCPKG_TARGET_TRIPLET_PLAT ios)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows" OR (NOT CMAKE_SYSTEM_NAME AND CMAKE_HOST_SYSTEM_NAME STREQUAL "Windows"))
     set(_VCPKG_TARGET_TRIPLET_PLAT windows)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD" OR (NOT CMAKE_SYSTEM_NAME AND CMAKE_HOST_SYSTEM_NAME STREQUAL "FreeBSD"))
@@ -85,32 +153,37 @@ if(NOT DEFINED _VCPKG_ROOT_DIR)
 endif()
 set(_VCPKG_INSTALLED_DIR ${_VCPKG_ROOT_DIR}/installed)
 
-if(NOT EXISTS "${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}" AND NOT _CMAKE_IN_TRY_COMPILE)
+if(NOT EXISTS "${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}" AND NOT _CMAKE_IN_TRY_COMPILE AND NOT VCPKG_SUPPRESS_INSTALLED_LIBRARIES_WARNING)
     message(WARNING "There are no libraries installed for the Vcpkg triplet ${VCPKG_TARGET_TRIPLET}.")
 endif()
 
-if(CMAKE_BUILD_TYPE MATCHES "^Debug$" OR NOT DEFINED CMAKE_BUILD_TYPE)
+if(CMAKE_BUILD_TYPE MATCHES "^[Dd][Ee][Bb][Uu][Gg]$" OR NOT DEFINED CMAKE_BUILD_TYPE) #Debug build: Put Debug paths before Release paths.
     list(APPEND CMAKE_PREFIX_PATH
-        ${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/debug
+        ${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/debug ${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}
     )
     list(APPEND CMAKE_LIBRARY_PATH
-        ${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/debug/lib/manual-link
+        ${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/debug/lib/manual-link ${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/lib/manual-link
     )
     list(APPEND CMAKE_FIND_ROOT_PATH
-        ${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/debug
+        ${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/debug ${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}
+    )
+else() #Release build: Put Release paths before Debug paths. Debug Paths are required so that CMake generates correct info in autogenerated target files.
+    list(APPEND CMAKE_PREFIX_PATH
+        ${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET} ${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/debug
+    )
+    list(APPEND CMAKE_LIBRARY_PATH
+        ${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/lib/manual-link ${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/debug/lib/manual-link
+    )
+    list(APPEND CMAKE_FIND_ROOT_PATH
+        ${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET} ${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/debug
     )
 endif()
-list(APPEND CMAKE_PREFIX_PATH
-    ${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}
-)
-list(APPEND CMAKE_FIND_ROOT_PATH
-    ${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}
-)
-list(APPEND CMAKE_LIBRARY_PATH
-    ${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/lib/manual-link
-)
+
+set(VCPKG_CMAKE_FIND_ROOT_PATH ${CMAKE_FIND_ROOT_PATH})
 
 file(TO_CMAKE_PATH "$ENV{PROGRAMFILES}" _programfiles)
+set(_PROGRAMFILESX86 "PROGRAMFILES(x86)")
+file(TO_CMAKE_PATH "$ENV{${_PROGRAMFILESX86}}" _programfiles_x86)
 set(CMAKE_SYSTEM_IGNORE_PATH
     "${_programfiles}/OpenSSL"
     "${_programfiles}/OpenSSL-Win32"
@@ -119,6 +192,13 @@ set(CMAKE_SYSTEM_IGNORE_PATH
     "${_programfiles}/OpenSSL-Win64/lib/VC"
     "${_programfiles}/OpenSSL-Win32/lib/VC/static"
     "${_programfiles}/OpenSSL-Win64/lib/VC/static"
+    "${_programfiles_x86}/OpenSSL"
+    "${_programfiles_x86}/OpenSSL-Win32"
+    "${_programfiles_x86}/OpenSSL-Win64"
+    "${_programfiles_x86}/OpenSSL-Win32/lib/VC"
+    "${_programfiles_x86}/OpenSSL-Win64/lib/VC"
+    "${_programfiles_x86}/OpenSSL-Win32/lib/VC/static"
+    "${_programfiles_x86}/OpenSSL-Win64/lib/VC/static"
     "C:/OpenSSL/"
     "C:/OpenSSL-Win32/"
     "C:/OpenSSL-Win64/"
@@ -141,14 +221,25 @@ function(add_executable name)
     _add_executable(${ARGV})
     list(FIND ARGV "IMPORTED" IMPORTED_IDX)
     list(FIND ARGV "ALIAS" ALIAS_IDX)
+    list(FIND ARGV "MACOSX_BUNDLE" MACOSX_BUNDLE_IDX)
     if(IMPORTED_IDX EQUAL -1 AND ALIAS_IDX EQUAL -1)
-        if(VCPKG_APPLOCAL_DEPS AND _VCPKG_TARGET_TRIPLET_PLAT MATCHES "windows|uwp")
-            add_custom_command(TARGET ${name} POST_BUILD
-                COMMAND powershell -noprofile -executionpolicy Bypass -file ${_VCPKG_TOOLCHAIN_DIR}/msbuild/applocal.ps1
-                    -targetBinary $<TARGET_FILE:${name}>
-                    -installedDir "${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}$<$<CONFIG:Debug>:/debug>/bin"
-                    -OutVariable out
-            )
+        if(VCPKG_APPLOCAL_DEPS)
+            if(_VCPKG_TARGET_TRIPLET_PLAT MATCHES "windows|uwp")
+                add_custom_command(TARGET ${name} POST_BUILD
+                    COMMAND powershell -noprofile -executionpolicy Bypass -file ${_VCPKG_TOOLCHAIN_DIR}/msbuild/applocal.ps1
+                        -targetBinary $<TARGET_FILE:${name}>
+                        -installedDir "${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}$<$<CONFIG:Debug>:/debug>/bin"
+                        -OutVariable out
+                )
+            elseif(_VCPKG_TARGET_TRIPLET_PLAT MATCHES "osx")
+                if (NOT MACOSX_BUNDLE_IDX EQUAL -1)
+                    add_custom_command(TARGET ${name} POST_BUILD
+                    COMMAND python ${_VCPKG_TOOLCHAIN_DIR}/osx/applocal.py
+                        $<TARGET_FILE:${name}>
+                        "${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}$<$<CONFIG:Debug>:/debug>"
+                    )
+                endif()
+            endif()
         endif()
         set_target_properties(${name} PROPERTIES VS_USER_PROPS do_not_import_user.props)
         set_target_properties(${name} PROPERTIES VS_GLOBAL_VcpkgEnabled false)
@@ -175,16 +266,29 @@ function(add_library name)
     endif()
 endfunction()
 
-macro(find_package name)
+if(NOT DEFINED VCPKG_OVERRIDE_FIND_PACKAGE_NAME)
+    set(VCPKG_OVERRIDE_FIND_PACKAGE_NAME find_package)
+endif()
+macro(${VCPKG_OVERRIDE_FIND_PACKAGE_NAME} name)
+    # Workaround to set the ROOT_PATH until upstream CMake stops overriding
+    # the ROOT_PATH at apple OS initialization phase.
+    # See https://gitlab.kitware.com/cmake/cmake/merge_requests/3273
+    if(CMAKE_SYSTEM_NAME STREQUAL iOS)
+        set(BACKUP_CMAKE_FIND_ROOT_PATH ${CMAKE_FIND_ROOT_PATH})
+        list(APPEND CMAKE_FIND_ROOT_PATH ${VCPKG_CMAKE_FIND_ROOT_PATH})
+    endif()
     string(TOLOWER "${name}" _vcpkg_lowercase_name)
+
     if(EXISTS "${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/share/${_vcpkg_lowercase_name}/vcpkg-cmake-wrapper.cmake")
         set(ARGS "${ARGV}")
         include(${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/share/${_vcpkg_lowercase_name}/vcpkg-cmake-wrapper.cmake)
     elseif("${name}" STREQUAL "Boost" AND EXISTS "${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/include/boost")
         # Checking for the boost headers disables this wrapper unless the user has installed at least one boost library
-        unset(Boost_USE_STATIC_LIBS)
-        unset(Boost_USE_MULTITHREADED)
+        set(Boost_USE_STATIC_LIBS OFF)
+        set(Boost_USE_MULTITHREADED ON)
         unset(Boost_USE_STATIC_RUNTIME)
+        set(Boost_NO_BOOST_CMAKE ON)
+        unset(Boost_USE_STATIC_RUNTIME CACHE)
         set(Boost_COMPILER "-vc140")
         _find_package(${ARGV})
     elseif("${name}" STREQUAL "ICU" AND EXISTS "${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/include/unicode/utf.h")
@@ -198,28 +302,6 @@ macro(find_package name)
         else()
             _find_package(${ARGV})
         endif()
-    elseif("${name}" STREQUAL "TIFF" AND EXISTS "${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/include/tiff.h")
-        _find_package(${ARGV})
-        find_package(LibLZMA)
-        if(TARGET TIFF::TIFF)
-            set_property(TARGET TIFF::TIFF APPEND PROPERTY INTERFACE_LINK_LIBRARIES ${LIBLZMA_LIBRARIES})
-        endif()
-        if(TIFF_LIBRARIES)
-            list(APPEND TIFF_LIBRARIES ${LIBLZMA_LIBRARIES})
-        endif()
-    elseif(("${name}" STREQUAL "HDF5" OR "${name}" STREQUAL "hdf5") AND NOT PROJECT_NAME STREQUAL "VTK" AND EXISTS "${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/include/hdf5.h")
-        # This is a hack to make VTK work. TODO: find another way to suppress the built-in find module.
-        _find_package(${ARGV} CONFIG)
-        # Fill in missing static/shared targets
-        foreach(HDF5TARGET hdf5 hdf5_hl hdf5_cpp hdf5_hl_cpp)
-            if(TARGET hdf5::${HDF5TARGET}-static AND NOT TARGET hdf5::${HDF5TARGET}-shared)
-                _add_library(hdf5::${HDF5TARGET}-shared INTERFACE IMPORTED)
-                set_target_properties(hdf5::${HDF5TARGET}-shared PROPERTIES INTERFACE_LINK_LIBRARIES "hdf5::${HDF5TARGET}-static")
-            elseif(TARGET hdf5::${HDF5TARGET}-shared AND NOT TARGET hdf5::${HDF5TARGET}-static)
-                _add_library(hdf5::${HDF5TARGET}-static INTERFACE IMPORTED)
-                set_target_properties(hdf5::${HDF5TARGET}-static PROPERTIES INTERFACE_LINK_LIBRARIES "hdf5::${HDF5TARGET}-shared")
-            endif()
-        endforeach()
     elseif("${name}" STREQUAL "GSL" AND EXISTS "${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/include/gsl")
         _find_package(${ARGV})
         if(GSL_FOUND AND TARGET GSL::gsl)
@@ -246,6 +328,9 @@ macro(find_package name)
     else()
         _find_package(${ARGV})
     endif()
+    if(CMAKE_SYSTEM_NAME STREQUAL iOS)
+        set(CMAKE_FIND_ROOT_PATH "${BACKUP_CMAKE_FIND_ROOT_PATH}")
+    endif()
 endmacro()
 
 set(VCPKG_TOOLCHAIN ON)
@@ -255,13 +340,25 @@ set(_UNUSED ${CMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY})
 set(_UNUSED ${CMAKE_FIND_PACKAGE_NO_SYSTEM_PACKAGE_REGISTRY})
 set(_UNUSED ${CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS_SKIP})
 
+# Propogate these values to try-compile configurations so the triplet and toolchain load
 if(NOT _CMAKE_IN_TRY_COMPILE)
-    file(TO_CMAKE_PATH "${VCPKG_CHAINLOAD_TOOLCHAIN_FILE}" _chainload_file)
-    file(TO_CMAKE_PATH "${_VCPKG_ROOT_DIR}" _root_dir)
-    file(WRITE "${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/vcpkg.config.cmake"
-        "set(VCPKG_TARGET_TRIPLET \"${VCPKG_TARGET_TRIPLET}\" CACHE STRING \"\")\n"
-        "set(VCPKG_APPLOCAL_DEPS \"${VCPKG_APPLOCAL_DEPS}\" CACHE STRING \"\")\n"
-        "set(VCPKG_CHAINLOAD_TOOLCHAIN_FILE \"${_chainload_file}\" CACHE STRING \"\")\n"
-        "set(_VCPKG_ROOT_DIR \"${_root_dir}\" CACHE STRING \"\")\n"
+    if(_CMAKE_EMULATE_TRY_COMPILE_PLATFORM_VARIABLES)
+        file(TO_CMAKE_PATH "${VCPKG_CHAINLOAD_TOOLCHAIN_FILE}" _chainload_file)
+        file(TO_CMAKE_PATH "${_VCPKG_ROOT_DIR}" _root_dir)
+        file(WRITE "${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/vcpkg.config.cmake"
+            "set(VCPKG_TARGET_TRIPLET \"${VCPKG_TARGET_TRIPLET}\" CACHE STRING \"\")\n"
+            "set(VCPKG_TARGET_ARCHITECTURE \"${VCPKG_TARGET_ARCHITECTURE}\" CACHE STRING \"\")\n"
+            "set(VCPKG_APPLOCAL_DEPS \"${VCPKG_APPLOCAL_DEPS}\" CACHE STRING \"\")\n"
+            "set(VCPKG_CHAINLOAD_TOOLCHAIN_FILE \"${_chainload_file}\" CACHE STRING \"\")\n"
+            "set(_VCPKG_ROOT_DIR \"${_root_dir}\" CACHE STRING \"\")\n"
         )
+    else()
+        list(APPEND CMAKE_TRY_COMPILE_PLATFORM_VARIABLES
+            VCPKG_TARGET_TRIPLET
+            VCPKG_TARGET_ARCHITECTURE
+            VCPKG_APPLOCAL_DEPS
+            VCPKG_CHAINLOAD_TOOLCHAIN_FILE
+            _VCPKG_ROOT_DIR
+        )
+    endif()
 endif()

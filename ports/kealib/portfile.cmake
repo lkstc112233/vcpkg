@@ -1,16 +1,10 @@
-include(vcpkg_common_functions)
-set(SOURCE_PATH ${CURRENT_BUILDTREES_DIR}/src/kealib-1.4.7)
-vcpkg_download_distfile(ARCHIVE
-    URLS "https://bitbucket.org/chchrsc/kealib/downloads/kealib-1.4.7.tar.gz"
-    FILENAME "kealib-1.4.7.tar.gz"
-    SHA512 2d58d7d08943d028e19a24f3ad3316a13b4db59be8697cebf30ee621e6bf0a6a47bf61abadd972d6ea7af1c8eed28bba7edf40fb8709fcccc1effbc90ae6e244
-)
-vcpkg_extract_source_archive(${ARCHIVE})
-
-vcpkg_apply_patches(
-    SOURCE_PATH ${SOURCE_PATH}
-    PATCHES
-        ${CMAKE_CURRENT_LIST_DIR}/fix-cmake.patch
+vcpkg_from_github(
+    OUT_SOURCE_PATH SOURCE_PATH
+    REPO ubarsc/kealib
+    REF  de6dabd414039dd36a1ff01243901cec3f45256e #1.4.11
+    SHA512 34032dd27aee0714cbe6b76b2f731a05408fd5ff78080343bcfbc3aa7e6eeb06a341a423cee1e7f3624f4c1f661feaf4ea3a3d2e53172933e49982df0c438a6f
+    HEAD_REF master
+    PATCHES hdf5_include.patch
 )
 
 if ("parallel" IN_LIST FEATURES)
@@ -19,21 +13,27 @@ else()
     set(ENABLE_PARALLEL OFF)
 endif()
 
+if(${VCPKG_LIBRARY_LINKAGE} MATCHES "static")
+    set(HDF5_USE_STATIC_LIBRARIES ON)
+endif()
+
 vcpkg_configure_cmake(
-    SOURCE_PATH ${SOURCE_PATH}/trunk
+    SOURCE_PATH ${SOURCE_PATH}
     PREFER_NINJA
     OPTIONS
       -DHDF5_PREFER_PARALLEL=${ENABLE_PARALLEL}
       -DLIBKEA_WITH_GDAL=OFF
       -DDISABLE_TESTS=ON
+      -DHDF5_USE_STATIC_LIBRARIES=${HDF5_USE_STATIC_LIBRARIES}
 )
 
 vcpkg_install_cmake()
 vcpkg_copy_pdbs()
 
-file(REMOVE_RECURSE ${CURRENT_PACKAGES_DIR}/debug/include)
-file(INSTALL ${SOURCE_PATH}/trunk/python/LICENSE.txt DESTINATION ${CURRENT_PACKAGES_DIR}/share/kealib RENAME copyright)
-
 if(VCPKG_LIBRARY_LINKAGE STREQUAL "static")
     file(REMOVE_RECURSE ${CURRENT_PACKAGES_DIR}/debug/bin ${CURRENT_PACKAGES_DIR}/bin)
 endif()
+
+file(REMOVE_RECURSE ${CURRENT_PACKAGES_DIR}/debug/include)
+
+file(INSTALL ${SOURCE_PATH}/python/LICENSE.txt DESTINATION ${CURRENT_PACKAGES_DIR}/share/${PORT} RENAME copyright)

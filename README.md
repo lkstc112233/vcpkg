@@ -5,11 +5,18 @@ Vcpkg helps you manage C and C++ libraries on Windows, Linux and MacOS. This too
 
 For short description of available commands, run `vcpkg help`.
 
+* Github: [https://github.com/microsoft/vcpkg](https://github.com/microsoft/vcpkg)
+* Slack: [https://cppalliance.org/slack/](https://cppalliance.org/slack/), the #vcpkg channel
+* Docs: [Documentation](docs/index.md)
+
+[![Build Status](https://dev.azure.com/vcpkg/public/_apis/build/status/microsoft.vcpkg.ci?branchName=master)](https://dev.azure.com/vcpkg/public/_build/latest?definitionId=29&branchName=master)
+
 ## Quick Start
 Prerequisites:
 - Windows 10, 8.1, 7, Linux, or MacOS
-- Visual Studio 2017 or Visual Studio 2015 Update 3 (on Windows)
+- Visual Studio 2015 Update 3 or newer (on Windows)
 - Git
+- gcc >= 7 or equivalent clang (on Linux)
 - *Optional:* CMake 3.12.4
 
 To get started:
@@ -37,16 +44,17 @@ The best way to use installed libraries with CMake is via the toolchain file `sc
 
 In Visual Studio, you can create a New Project (or open an existing one). All installed libraries are immediately ready to be `#include`'d and used in your project without additional configuration.
 
-For more information, see our [using a package](docs/examples/installing-and-using-packages.md) example for the specifics.
+For more information, see our [using a package](docs/examples/installing-and-using-packages.md) example for the specifics. If your library is not present in vcpkg catalog, you can open an [issue on the GitHub repo](https://github.com/microsoft/vcpkg/issues) where the dev team and the community can see it and potentially create the port file for this library.
 
 Additional notes on macOS and Linux support can be found in the [official announcement](https://blogs.msdn.microsoft.com/vcblog/2018/04/24/announcing-a-single-c-library-manager-for-linux-macos-and-windows-vcpkg/).
 
 ## Tab-Completion / Auto-Completion
-`vcpkg` supports auto-completion of commands, package names, options etc. To enable tab-completion in Powershell, use
+`vcpkg` supports auto-completion of commands, package names, options etc in Powershell and bash. To enable tab-completion, use one of the following:
 ```
-.\vcpkg integrate powershell
+PS> .\vcpkg integrate powershell
+Linux:~/$ ./vcpkg integrate bash
 ```
-and restart Powershell.
+and restart your console.
 
 
 ## Examples
@@ -69,3 +77,9 @@ This project has adopted the [Microsoft Open Source Code of Conduct](https://ope
 ## License
 
 Code licensed under the [MIT License](LICENSE.txt).
+
+## Telemetry
+
+vcpkg collects usage data in order to help us improve your experience. The data collected by Microsoft is anonymous. You can opt-out of telemetry by running `bootstrap-vcpkg.bat` or `bootstrap-vcpkg.sh` with `-disableMetrics`.
+
+Read more about vcpkg telemetry at docs/about/privacy.md

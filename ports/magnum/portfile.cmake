@@ -1,18 +1,23 @@
-include(vcpkg_common_functions)
+# Patches that are independent of --head flag
+set(_PATCHES 001-tools-path.patch)
+
+# Patches that are only applied to --head builds
+if(VCPKG_USE_HEAD_VERSION)
+    list(APPEND _PATCHES 002-sdl-includes-head.patch)
+
+# Patches that are only applied to release builds
+else()
+    list(APPEND _PATCHES 002-sdl-includes.patch)
+endif()
+
 vcpkg_from_github(
     OUT_SOURCE_PATH SOURCE_PATH
     REPO mosra/magnum
-    REF v2018.10
-    SHA512 3c0998fc3600cb3799e89b4b97f6640e9b7ea9eb0ba937a2ccc0a9e5411f7dc466524a56a49ec04993530703e6688292af042a9aa6452af37f20d4449351cd96
+    REF v2019.10
+    SHA512 b1c991199fa9b09b780ea822de4b2251c70fcc95e7f28bb14a6184861d92fcd4c6e6fe43ad21acfbfd191cd46e79bf58b867240ad6f706b07cd1fbe145b8eaff
     HEAD_REF master
-)
-
-vcpkg_apply_patches(
-    SOURCE_PATH ${SOURCE_PATH}
     PATCHES
-        ${CMAKE_CURRENT_LIST_DIR}/001-sdl-includes.patch
-        ${CMAKE_CURRENT_LIST_DIR}/002-tools-path.patch
-        ${CMAKE_CURRENT_LIST_DIR}/003-glfw-find-module.patch
+        ${_PATCHES}
 )
 
 if(VCPKG_LIBRARY_LINKAGE STREQUAL static)

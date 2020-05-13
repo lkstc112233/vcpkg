@@ -12,27 +12,25 @@
 
 namespace vcpkg::Commands
 {
-    using CommandTypeA = void (*)(const VcpkgCmdArguments& args,
-                                  const VcpkgPaths& paths,
-                                  const Triplet& default_triplet);
+    using CommandTypeA = void (*)(const VcpkgCmdArguments& args, const VcpkgPaths& paths, Triplet default_triplet);
     using CommandTypeB = void (*)(const VcpkgCmdArguments& args, const VcpkgPaths& paths);
     using CommandTypeC = void (*)(const VcpkgCmdArguments& args);
 
     namespace BuildExternal
     {
-        void perform_and_exit(const VcpkgCmdArguments& args, const VcpkgPaths& paths, const Triplet& default_triplet);
+        void perform_and_exit(const VcpkgCmdArguments& args, const VcpkgPaths& paths, Triplet default_triplet);
     }
 
     namespace CI
     {
         extern const CommandStructure COMMAND_STRUCTURE;
-        void perform_and_exit(const VcpkgCmdArguments& args, const VcpkgPaths& paths, const Triplet& default_triplet);
+        void perform_and_exit(const VcpkgCmdArguments& args, const VcpkgPaths& paths, Triplet default_triplet);
     }
 
     namespace Env
     {
         extern const CommandStructure COMMAND_STRUCTURE;
-        void perform_and_exit(const VcpkgCmdArguments& args, const VcpkgPaths& paths, const Triplet& default_triplet);
+        void perform_and_exit(const VcpkgCmdArguments& args, const VcpkgPaths& paths, Triplet default_triplet);
     }
 
     namespace Create
@@ -44,7 +42,7 @@ namespace vcpkg::Commands
     namespace Upgrade
     {
         extern const CommandStructure COMMAND_STRUCTURE;
-        void perform_and_exit(const VcpkgCmdArguments& args, const VcpkgPaths& paths, const Triplet& default_triplet);
+        void perform_and_exit(const VcpkgCmdArguments& args, const VcpkgPaths& paths, Triplet default_triplet);
     }
 
     namespace Edit
@@ -55,7 +53,8 @@ namespace vcpkg::Commands
 
     namespace DependInfo
     {
-        void perform_and_exit(const VcpkgCmdArguments& args, const VcpkgPaths& paths);
+        extern const CommandStructure COMMAND_STRUCTURE;
+        void perform_and_exit(const VcpkgCmdArguments& args, const VcpkgPaths& paths, Triplet default_triplet);
     }
 
     namespace Search
@@ -99,6 +98,11 @@ namespace vcpkg::Commands
         void perform_and_exit(const VcpkgCmdArguments& args, const VcpkgPaths& paths);
     }
 
+    namespace PortHistory
+    {
+        void perform_and_exit(const VcpkgCmdArguments& args, const VcpkgPaths& paths);
+    }
+
     namespace Autocomplete
     {
         void perform_and_exit(const VcpkgCmdArguments& args, const VcpkgPaths& paths);
@@ -133,6 +137,12 @@ namespace vcpkg::Commands
     namespace Fetch
     {
         void perform_and_exit(const VcpkgCmdArguments& args, const VcpkgPaths& paths);
+    }
+
+    namespace SetInstalled
+    {
+        extern const CommandStructure COMMAND_STRUCTURE;
+        void perform_and_exit(const VcpkgCmdArguments& args, const VcpkgPaths& paths, Triplet default_triplet);
     }
 
     template<class T>

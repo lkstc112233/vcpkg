@@ -1,15 +1,21 @@
-#header-only library
-include(vcpkg_common_functions)
 vcpkg_from_github(
     OUT_SOURCE_PATH SOURCE_PATH
     REPO onqtam/doctest
-    REF 2.0.1
-    SHA512 bbd676c8485d9bee4be3f2f6bdd0f72bced09767427533c8de3ea46b298182acaeff64e42683a4283512edd81bb444880b229e65f3296bb4afc8b5b93c03b970
+    REF 7d42bd0fab6c44010c8aed9338bd02bea5feba41 #version 2.3.7
+    SHA512 4e71c8dd49a97ee2324207e063d47ce56cfb0371c0e855dd26ce4f169299f1710e4f30a9c5f16a078690c983e6ce7b6d5bb4fe9e0ec6be017905b2381a85b5a6
     HEAD_REF master
 )
 
-# Handle copyright
-file(INSTALL ${SOURCE_PATH}/LICENSE.txt DESTINATION ${CURRENT_PACKAGES_DIR}/share/doctest RENAME copyright)
+vcpkg_configure_cmake(
+    SOURCE_PATH ${SOURCE_PATH}
+    PREFER_NINJA
+    OPTIONS
+        -DDOCTEST_WITH_TESTS=OFF
+)
 
-# Copy header file
-file(INSTALL ${SOURCE_PATH}/doctest/doctest.h DESTINATION ${CURRENT_PACKAGES_DIR}/include/doctest)
+vcpkg_install_cmake()
+vcpkg_fixup_cmake_targets(CONFIG_PATH lib/cmake/doctest)
+
+file(REMOVE_RECURSE ${CURRENT_PACKAGES_DIR}/lib)
+file(REMOVE_RECURSE ${CURRENT_PACKAGES_DIR}/debug)
+configure_file(${SOURCE_PATH}/LICENSE.txt ${CURRENT_PACKAGES_DIR}/share/${PORT}/copyright COPYONLY)

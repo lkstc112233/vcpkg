@@ -1,25 +1,24 @@
-if(VCPKG_CMAKE_SYSTEM_NAME STREQUAL "WindowsStore")
-    message(FATAL_ERROR "${PORT} does not currently support UWP")
-endif()
-
-include(vcpkg_common_functions)
+vcpkg_fail_port_install(ON_TARGET "UWP")
 
 vcpkg_from_github(
     OUT_SOURCE_PATH SOURCE_PATH
     REPO Azure/azure-storage-cpp
-    REF v5.2.0
-    SHA512 345ddfcececc7b38e65dff96c971eadc41ce7255131f1bc9995dd8fed0c69cc3b48c6838152e30c57014bf2017bde0c819a09b7d6b4abaa089a7ae023633262e
+    REF v7.3.0
+    SHA512 4297fa9e70fc4f4dde63f78f21714c2f9f6a9a63529cc3595f61e08659ea86a3590dbf9e99ee67572099c6bb7cc5b376bba6f29fbf59c5a1b705d841bb9a32e4
     HEAD_REF master
-    PATCHES
-        ${CMAKE_CURRENT_LIST_DIR}/pplx-do-while.patch
 )
 
 vcpkg_configure_cmake(
     SOURCE_PATH ${SOURCE_PATH}/Microsoft.WindowsAzure.Storage
+    PREFER_NINJA
     OPTIONS
         -DCMAKE_FIND_FRAMEWORK=LAST
         -DBUILD_TESTS=OFF
         -DBUILD_SAMPLES=OFF
+    OPTIONS_RELEASE
+        -DGETTEXT_LIB_DIR=${CURRENT_INSTALLED_DIR}/lib
+    OPTIONS_DEBUG
+        -DGETTEXT_LIB_DIR=${CURRENT_INSTALLED_DIR}/debug/lib
 )
 
 vcpkg_install_cmake()

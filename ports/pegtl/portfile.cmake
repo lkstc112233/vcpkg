@@ -1,9 +1,8 @@
-include(vcpkg_common_functions)
 vcpkg_from_github(
     OUT_SOURCE_PATH SOURCE_PATH
     REPO taocpp/pegtl
-    REF 2.7.1
-    SHA512 fe89ef5a519f7b0070a8cfaf7d1a76f9a73e747065d872cc9434a31b2e77c12140d581b87fade9498c9db9d7867556b0c34fcd43f9d6e0946029d4886d291b21
+    REF 83b6cdc717b68a3714e6c76e13dbc4a571b491c1
+    SHA512 cc8b87c7ff486f6ddd3ef88fb23fbefd7196afd5fb9577a30d64e971ef43e85abd337068836a01229646c6d37820a8c45a01fd8427f0c3de65bec7aaf1169248
     HEAD_REF master
 )
 
@@ -13,6 +12,8 @@ vcpkg_configure_cmake(
     OPTIONS
         -DPEGTL_BUILD_TESTS=OFF
         -DPEGTL_BUILD_EXAMPLES=OFF
+        -DPEGTL_INSTALL_DOC_DIR=share/pegtl
+        -DPEGTL_INSTALL_CMAKE_DIR=share/pegtl/cmake
 )
 
 vcpkg_install_cmake()
@@ -22,4 +23,4 @@ vcpkg_fixup_cmake_targets(CONFIG_PATH share/pegtl/cmake)
 file(REMOVE_RECURSE ${CURRENT_PACKAGES_DIR}/debug)
 
 # Handle copyright
-file(INSTALL ${SOURCE_PATH}/LICENSE DESTINATION ${CURRENT_PACKAGES_DIR}/share/pegtl RENAME copyright)
+file(RENAME ${CURRENT_PACKAGES_DIR}/share/pegtl/LICENSE ${CURRENT_PACKAGES_DIR}/share/pegtl/copyright)

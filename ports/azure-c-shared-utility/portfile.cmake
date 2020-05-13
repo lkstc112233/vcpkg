@@ -1,14 +1,28 @@
-include(vcpkg_common_functions)
+vcpkg_fail_port_install(ON_TARGET "UWP")
 
 vcpkg_check_linkage(ONLY_STATIC_LIBRARY)
 
-vcpkg_from_github(
-    OUT_SOURCE_PATH SOURCE_PATH
-    REPO Azure/azure-c-shared-utility
-    REF bcf6393b1ce3cecf0fcdf8988621fd6e4d414df3
-    SHA512 e5ae3c895777df90e725da7686939b46fa4df19ce5626bbe13a5aaf1b844ee56c96ddf2a9ad8426a96cdc34e8be338c95b6759e618143e19445c5180fb0f7ed1
-    HEAD_REF master
-)
+if("public-preview" IN_LIST FEATURES)
+    vcpkg_from_github(
+        OUT_SOURCE_PATH SOURCE_PATH
+        REPO Azure/azure-c-shared-utility
+        REF 42574842914591aadc77701aac72f18cc72319ad
+        SHA512 dfe6ccede4bebdb3a39fbfea1dc55ddca57cced0d2656ee4bed1a5e5c9c434e1f2d892eb4e29bbb424cb9a02f2374a95fb9a020442bea580d39c242efad1b789
+        HEAD_REF master
+        PATCHES 
+            fix-utilityFunctions-conditions-preview.patch
+    )
+else()
+    vcpkg_from_github(
+        OUT_SOURCE_PATH SOURCE_PATH
+        REPO Azure/azure-c-shared-utility
+        REF 48f7a556865731f0e96c47eb5e9537361f24647c
+        SHA512 c20074707e8601e090ee8daac1d96fdfb4f60ac60fd9c824dad81aa4c2f22b04733c82c01c1ae92110c26871b81674e8771d9ed65081f1c0c197a362275a28f1
+        HEAD_REF master
+        PATCHES 
+            fix-utilityFunctions-conditions.patch
+    )
+endif()
 
 vcpkg_configure_cmake(
     SOURCE_PATH ${SOURCE_PATH}

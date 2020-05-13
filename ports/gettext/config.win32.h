@@ -229,7 +229,7 @@
 /* #undef HAVE_INCLUDE_NEXT */
 
 /* Define if you have the 'intmax_t' type in <stdint.h> or <inttypes.h>. */
-/* #undef HAVE_INTMAX_T */
+#define HAVE_INTMAX_T 1
 
 /* Define to 1 if you have the <inttypes.h> header file. */
 /* #undef HAVE_INTTYPES_H */
@@ -275,7 +275,9 @@
 #define HAVE_MEMORY_H 1
 
 /* Define to 1 if you have the `mempcpy' function. */
-/* #undef HAVE_MEMPCPY */
+#ifdef __GNUC__
+#define HAVE_MEMPCPY 1
+#endif
 
 /* Define to 1 if you have a working `mmap' system call. */
 /* #undef HAVE_MMAP */
@@ -330,11 +332,11 @@
 #define HAVE_STDDEF_H 1
 
 /* Define to 1 if you have the <stdint.h> header file. */
-/* #undef HAVE_STDINT_H */
+#define HAVE_STDINT_H 1
 
 /* Define if <stdint.h> exists, doesn't clash with <sys/types.h>, and declares
    uintmax_t. */
-/* #undef HAVE_STDINT_H_WITH_UINTMAX */
+#define HAVE_STDINT_H_WITH_UINTMAX 1
 
 /* Define to 1 if you have the <stdlib.h> header file. */
 #define HAVE_STDLIB_H 1
@@ -382,7 +384,7 @@
 /* #undef HAVE_TSEARCH */
 
 /* Define if you have the 'uintmax_t' type in <stdint.h> or <inttypes.h>. */
-/* #undef HAVE_UINTMAX_T */
+#define HAVE_UINTMAX_T 1
 
 /* Define to 1 if you have the <unistd.h> header file. */
 /* #undef HAVE_UNISTD_H */
@@ -624,11 +626,7 @@
 
 /* Define to unsigned long or unsigned long long if <stdint.h> and
    <inttypes.h> don't define. */
-#ifdef _WIN64
-#define uintmax_t unsigned __int64
-#elif _WIN32
-#define uintmax_t unsigned __int32
-#endif
+/* #undef uintmax_t */
 
 #define __libc_lock_t                   gl_lock_t
 #define __libc_lock_define              gl_lock_define

@@ -1,3 +1,13 @@
+#if defined(_MSC_VER) && _MSC_VER < 1911
+// [[nodiscard]] is not recognized before VS 2017 version 15.3
+#pragma warning(disable : 5030)
+#endif
+
+#if defined(__GNUC__) && __GNUC__ < 7
+// [[nodiscard]] is not recognized before GCC version 7
+#pragma GCC diagnostic ignored "-Wattributes"
+#endif
+
 #if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
@@ -13,7 +23,9 @@
 #include <vcpkg/base/chrono.h>
 #include <vcpkg/base/files.h>
 #include <vcpkg/base/strings.h>
-#include <vcpkg/base/system.h>
+#include <vcpkg/base/system.debug.h>
+#include <vcpkg/base/system.print.h>
+#include <vcpkg/base/system.process.h>
 #include <vcpkg/commands.h>
 #include <vcpkg/globalstate.h>
 #include <vcpkg/help.h>
@@ -28,8 +40,10 @@
 #include <memory>
 #include <random>
 
+#if defined(_WIN32)
 #pragma comment(lib, "ole32")
 #pragma comment(lib, "shell32")
+#endif
 
 using namespace vcpkg;
 
@@ -39,15 +53,17 @@ static constexpr int SURVEY_INTERVAL_IN_HOURS = 24 * 30 * 6;
 // Initial survey appears after 10 days. Therefore, subtract 24 hours/day * 10 days
 static constexpr int SURVEY_INITIAL_OFFSET_IN_HOURS = SURVEY_INTERVAL_IN_HOURS - 24 * 10;
 
-void invalid_command(const std::string& cmd)
+static void invalid_command(const std::string& cmd)
 {
-    System::println(System::Color::error, "invalid command: %s", cmd);
+    System::print2(System::Color::error, "invalid command: ", cmd, '\n');
     Help::print_usage();
     Checks::exit_fail(VCPKG_LINE_INFO);
 }
 
 static void inner(const VcpkgCmdArguments& args)
 {
+    auto& fs = Files::get_real_filesystem();
+
     Metrics::g_metrics.lock()->track_property("command", args.command);
     if (args.command.empty())
     {
@@ -74,37 +90,59 @@ static void inner(const VcpkgCmdArguments& args)
     }
 
     fs::path vcpkg_root_dir;
-    if (args.vcpkg_root_dir != nullptr)
+    if (args.vcpkg_root_dir)
     {
-        vcpkg_root_dir = fs::stdfs::absolute(fs::u8path(*args.vcpkg_root_dir));
+        vcpkg_root_dir = fs.absolute(VCPKG_LINE_INFO, fs::u8path(*args.vcpkg_root_dir));
     }
     else
     {
         const auto vcpkg_root_dir_env = System::get_environment_variable("VCPKG_ROOT");
         if (const auto v = vcpkg_root_dir_env.get())
         {
-            vcpkg_root_dir = fs::stdfs::absolute(*v);
+            vcpkg_root_dir = fs.absolute(VCPKG_LINE_INFO, *v);
         }
         else
         {
-            const fs::path current_path = fs::stdfs::current_path();
-            vcpkg_root_dir = Files::get_real_filesystem().find_file_recursively_up(current_path, ".vcpkg-root");
+            const fs::path current_path = fs.current_path(VCPKG_LINE_INFO);
+            vcpkg_root_dir = fs.find_file_recursively_up(current_path, ".vcpkg-root");
 
             if (vcpkg_root_dir.empty())
             {
-                vcpkg_root_dir = Files::get_real_filesystem().find_file_recursively_up(
-                    fs::stdfs::absolute(System::get_exe_path_of_current_process()), ".vcpkg-root");
+                vcpkg_root_dir = fs.find_file_recursively_up(
+                    fs.absolute(VCPKG_LINE_INFO, System::get_exe_path_of_current_process()), ".vcpkg-root");
             }
         }
     }
 
     Checks::check_exit(VCPKG_LINE_INFO, !vcpkg_root_dir.empty(), "Error: Could not detect vcpkg-root.");
 
-    Debug::println("Using vcpkg-root: %s", vcpkg_root_dir.u8string());
+    Debug::print("Using vcpkg-root: ", vcpkg_root_dir.u8string(), '\n');
 
-    auto default_vs_path = System::get_environment_variable("VCPKG_DEFAULT_VS_PATH").value_or("");
+    Optional<fs::path> install_root_dir;
+    if (args.install_root_dir)
+    {
+        install_root_dir = Files::get_real_filesystem().canonical(VCPKG_LINE_INFO, fs::u8path(*args.install_root_dir));
+        Debug::print("Using install-root: ", install_root_dir.value_or_exit(VCPKG_LINE_INFO).u8string(), '\n');
+    }
 
-    const Expected<VcpkgPaths> expected_paths = VcpkgPaths::create(vcpkg_root_dir, default_vs_path);
+    Optional<fs::path> vcpkg_scripts_root_dir;
+    if (args.scripts_root_dir)
+    {
+        vcpkg_scripts_root_dir =
+            Files::get_real_filesystem().canonical(VCPKG_LINE_INFO, fs::u8path(*args.scripts_root_dir));
+        Debug::print("Using scripts-root: ", vcpkg_scripts_root_dir.value_or_exit(VCPKG_LINE_INFO).u8string(), '\n');
+    }
+
+    auto default_vs_path = System::get_environment_variable("VCPKG_VISUAL_STUDIO_PATH").value_or("");
+
+    auto original_cwd = Files::get_real_filesystem().current_path(VCPKG_LINE_INFO);
+
+    const Expected<VcpkgPaths> expected_paths = VcpkgPaths::create(vcpkg_root_dir,
+                                                                   install_root_dir,
+                                                                   vcpkg_scripts_root_dir,
+                                                                   default_vs_path,
+                                                                   args.overlay_triplets.get(),
+                                                                   original_cwd);
     Checks::check_exit(VCPKG_LINE_INFO,
                        !expected_paths.error(),
                        "Error: Invalid vcpkg root directory %s: %s",
@@ -117,7 +155,11 @@ static void inner(const VcpkgCmdArguments& args)
 #else
     const int exit_code = chdir(paths.root.c_str());
 #endif
-    Checks::check_exit(VCPKG_LINE_INFO, exit_code == 0, "Changing the working dir failed");
+    Checks::check_exit(
+        VCPKG_LINE_INFO,
+        exit_code == 0,
+        "Changing the working directory to the vcpkg root directory failed. Did you incorrectly define the VCPKG_ROOT "
+        "environment variable, or did you mistakenly create a file named .vcpkg-root somewhere?");
 
     if (args.command == "install" || args.command == "remove" || args.command == "export" || args.command == "update")
     {
@@ -137,10 +179,10 @@ static void inner(const VcpkgCmdArguments& args)
                 if (distribution(generator) == 1)
                 {
                     Metrics::g_metrics.lock()->track_property("surveyprompt", "true");
-                    System::println(
+                    System::print2(
                         System::Color::success,
                         "Your feedback is important to improve Vcpkg! Please take 3 minutes to complete our survey "
-                        "by running: vcpkg contact --survey");
+                        "by running: vcpkg contact --survey\n");
                 }
             }
         }
@@ -154,14 +196,14 @@ static void inner(const VcpkgCmdArguments& args)
     Triplet default_triplet;
     if (args.triplet != nullptr)
     {
-        default_triplet = Triplet::from_canonical_name(*args.triplet);
+        default_triplet = Triplet::from_canonical_name(std::string(*args.triplet));
     }
     else
     {
-        const auto vcpkg_default_triplet_env = System::get_environment_variable("VCPKG_DEFAULT_TRIPLET");
-        if (const auto v = vcpkg_default_triplet_env.get())
+        auto vcpkg_default_triplet_env = System::get_environment_variable("VCPKG_DEFAULT_TRIPLET");
+        if (auto v = vcpkg_default_triplet_env.get())
         {
-            default_triplet = Triplet::from_canonical_name(*v);
+            default_triplet = Triplet::from_canonical_name(std::move(*v));
         }
         else
         {
@@ -171,8 +213,10 @@ static void inner(const VcpkgCmdArguments& args)
             default_triplet = Triplet::from_canonical_name("x64-osx");
 #elif defined(__FreeBSD__)
             default_triplet = Triplet::from_canonical_name("x64-freebsd");
-#else
+#elif defined(__GLIBC__)
             default_triplet = Triplet::from_canonical_name("x64-linux");
+#else
+            default_triplet = Triplet::from_canonical_name("x64-linux-musl");
 #endif
         }
     }
@@ -234,29 +278,19 @@ static void load_config()
 }
 
 #if defined(_WIN32)
-static std::string trim_path_from_command_line(const std::string& full_command_line)
+// note: this prevents a false positive for -Wmissing-prototypes on clang-cl
+int wmain(int, const wchar_t* const* const);
+
+#if !defined(_MSC_VER)
+#include <shellapi.h>
+int main(int argc, const char* const* const /*argv*/)
 {
-    Checks::check_exit(
-        VCPKG_LINE_INFO, !full_command_line.empty(), "Internal failure - cannot have empty command line");
-
-    if (full_command_line[0] == '"')
-    {
-        auto it = std::find(full_command_line.cbegin() + 1, full_command_line.cend(), '"');
-        if (it != full_command_line.cend()) // Skip over the quote
-            ++it;
-        while (it != full_command_line.cend() && *it == ' ') // Skip over a space
-            ++it;
-        return std::string(it, full_command_line.cend());
-    }
-
-    auto it = std::find(full_command_line.cbegin(), full_command_line.cend(), ' ');
-    while (it != full_command_line.cend() && *it == ' ')
-        ++it;
-    return std::string(it, full_command_line.cend());
+    wchar_t** wargv;
+    wargv = CommandLineToArgvW(GetCommandLineW(), &argc);
+    return wmain(argc, wargv);
 }
 #endif
 
-#if defined(_WIN32)
 int wmain(const int argc, const wchar_t* const* const argv)
 #else
 int main(const int argc, const char* const* const argv)
@@ -274,18 +308,40 @@ int main(const int argc, const char* const* const argv)
     SetConsoleCP(CP_UTF8);
     SetConsoleOutputCP(CP_UTF8);
 
-    const std::string trimmed_command_line = trim_path_from_command_line(Strings::to_utf8(GetCommandLineW()));
+    System::initialize_global_job_object();
 #endif
+
+    Checks::register_global_shutdown_handler([]() {
+        const auto elapsed_us_inner = GlobalState::timer.lock()->microseconds();
+
+        bool debugging = Debug::g_debugging;
+
+        auto metrics = Metrics::g_metrics.lock();
+        metrics->track_metric("elapsed_us", elapsed_us_inner);
+        Debug::g_debugging = false;
+        metrics->flush();
+
+#if defined(_WIN32)
+        if (GlobalState::g_init_console_initialized)
+        {
+            SetConsoleCP(GlobalState::g_init_console_cp);
+            SetConsoleOutputCP(GlobalState::g_init_console_output_cp);
+        }
+#endif
+
+        auto elapsed_us = GlobalState::timer.lock()->microseconds();
+        if (debugging)
+            System::printf("[DEBUG] Exiting after %d us (%d us)\n",
+                           static_cast<int>(elapsed_us),
+                           static_cast<int>(elapsed_us_inner));
+    });
 
     {
         auto locked_metrics = Metrics::g_metrics.lock();
         locked_metrics->track_property("version", Commands::Version::version());
-#if defined(_WIN32)
-        locked_metrics->track_property("cmdline", trimmed_command_line);
-#endif
     }
 
-    Checks::register_console_ctrl_handler();
+    System::register_console_ctrl_handler();
 
     load_config();
 
@@ -298,14 +354,13 @@ int main(const int argc, const char* const* const argv)
 
     const VcpkgCmdArguments args = VcpkgCmdArguments::create_from_command_line(argc, argv);
 
-    if (const auto p = args.featurepackages.get()) GlobalState::feature_packages = *p;
     if (const auto p = args.binarycaching.get()) GlobalState::g_binary_caching = *p;
 
     if (const auto p = args.printmetrics.get()) Metrics::g_metrics.lock()->set_print_metrics(*p);
     if (const auto p = args.sendmetrics.get()) Metrics::g_metrics.lock()->set_send_metrics(*p);
-    if (const auto p = args.debug.get()) GlobalState::debugging = *p;
+    if (const auto p = args.debug.get()) Debug::g_debugging = *p;
 
-    if (GlobalState::debugging)
+    if (Debug::g_debugging)
     {
         inner(args);
         Checks::exit_fail(VCPKG_LINE_INFO);
@@ -328,25 +383,28 @@ int main(const int argc, const char* const* const argv)
     Metrics::g_metrics.lock()->track_property("error", exc_msg);
 
     fflush(stdout);
-    System::print("vcpkg.exe has crashed.\n"
-                  "Please send an email to:\n"
-                  "    %s\n"
-                  "containing a brief summary of what you were trying to do and the following data blob:\n"
-                  "\n"
-                  "Version=%s\n"
-                  "EXCEPTION='%s'\n"
-                  "CMD=\n",
-                  Commands::Contact::email(),
-                  Commands::Version::version(),
-                  exc_msg);
+    System::printf("vcpkg.exe has crashed.\n"
+                   "Please send an email to:\n"
+                   "    %s\n"
+                   "containing a brief summary of what you were trying to do and the following data blob:\n"
+                   "\n"
+                   "Version=%s\n"
+                   "EXCEPTION='%s'\n"
+                   "CMD=\n",
+                   Commands::Contact::email(),
+                   Commands::Version::version(),
+                   exc_msg);
     fflush(stdout);
     for (int x = 0; x < argc; ++x)
     {
 #if defined(_WIN32)
-        System::println("%s|", Strings::to_utf8(argv[x]));
+        System::print2(Strings::to_utf8(argv[x]), "|\n");
 #else
-        System::println("%s|", argv[x]);
+        System::print2(argv[x], "|\n");
 #endif
     }
     fflush(stdout);
+
+    // It is expected that one of the sub-commands will exit cleanly before we get here.
+    Checks::exit_fail(VCPKG_LINE_INFO);
 }

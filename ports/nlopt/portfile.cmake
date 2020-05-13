@@ -1,28 +1,29 @@
-include(vcpkg_common_functions)
+vcpkg_fail_port_install(ON_TARGET "UWP")
 
 vcpkg_from_github(
     OUT_SOURCE_PATH SOURCE_PATH
     REPO stevengj/nlopt
-    REF 1226c1276dacf3687464c65eb165932281493a35
-    SHA512 889f60cd6970b17296871396366bd0d868011d71ca4b88cb6da906283f928e5b443ab18c5af48a0701c8bf68b6d66288a3e4f248e0ab8183251aa7c3b0cfd652
+    REF v2.6.2
+    SHA512 61e5c01140a57c0ad2a0acd82ad50dce1b5679dc281e55cbbc332e876b19a689013100617545a42b721d8c487df37d6ccd67859171243433fe29468f259b556b
     HEAD_REF master
 )
-
-vcpkg_apply_patches(
-    SOURCE_PATH ${SOURCE_PATH}
-    PATCHES
-        ${CMAKE_CURRENT_LIST_DIR}/0001_export_symbols.patch)
-
 
 vcpkg_configure_cmake(
     SOURCE_PATH ${SOURCE_PATH}
     PREFER_NINJA
+    OPTIONS
+        -DNLOPT_FORTRAN=OFF
+        -DNLOPT_PYTHON=OFF
+        -DNLOPT_OCTAVE=OFF
+        -DNLOPT_MATLAB=OFF
+        -DNLOPT_GUILE=OFF
+        -DNLOPT_SWIG=OFF
 )
 
 vcpkg_install_cmake()
 vcpkg_copy_pdbs()
 
-vcpkg_fixup_cmake_targets(CONFIG_PATH "lib/cmake/nlopt")
+vcpkg_fixup_cmake_targets(CONFIG_PATH lib/cmake/nlopt)
 
 file(REMOVE_RECURSE ${CURRENT_PACKAGES_DIR}/debug/include)
 file(REMOVE_RECURSE ${CURRENT_PACKAGES_DIR}/debug/share)

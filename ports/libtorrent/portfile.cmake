@@ -1,54 +1,76 @@
-include(vcpkg_common_functions)
+vcpkg_fail_port_install(ON_TARGET "uwp")
+
+if(VCPKG_TARGET_IS_WINDOWS)
+    # Building python bindings is currently broken on Windows
+    if("python" IN_LIST FEATURES)
+        message(FATAL_ERROR "The python feature is currently broken on Windows")
+    endif()
+
+    if("iconv" IN_LIST FEATURES)
+        set(ICONV_PATCH "fix_find_iconv.patch")
+    else()
+        # prevent picking up libiconv if it happens to already be installed
+        set(ICONV_PATCH "no_use_iconv.patch")
+    endif()
+
+    # Ensure "OPENSSL_USE_STATIC_LIBS" is set to ON
+    # when statically linking against OpenSSL on Windows.
+    # Also ensure "static_runtime" will be used when statically linking against the runtime.
+    # Prevents OpenSSL crypt32.lib linking errors.
+    if(VCPKG_CRT_LINKAGE STREQUAL "static")
+        set(_static_runtime ON)
+    elseif(VCPKG_LIBRARY_LINKAGE STREQUAL "static")
+        set(_OPENSSL_USE_STATIC_LIBS ON)
+    endif()
+endif()
+
+vcpkg_check_features(OUT_FEATURE_OPTIONS FEATURE_OPTIONS
+    deprfun     deprecated-functions
+    examples    build_examples
+    python      python-bindings
+    test        build_tests
+    tools       build_tools
+)
+
+# Note: the python feature currently requires `python3-dev` and `python3-setuptools` installed on the system
+if("python" IN_LIST FEATURES)
+    vcpkg_find_acquire_program(PYTHON3)
+    get_filename_component(PYTHON3_PATH ${PYTHON3} DIRECTORY)
+    vcpkg_add_to_path(${PYTHON3_PATH})
+
+    file(GLOB BOOST_PYTHON_LIB "${CURRENT_INSTALLED_DIR}/lib/*boost_python*")
+    string(REGEX REPLACE ".*(python)([0-9])([0-9]+).*" "\\1\\2\\3" _boost-python-module-name "${BOOST_PYTHON_LIB}")
+endif()
 
 vcpkg_from_github(
     OUT_SOURCE_PATH SOURCE_PATH
     REPO arvidn/libtorrent
-    REF libtorrent-1_1_6
-    SHA512 528034e63330d3c6910ab9db34a2a543618961c0095ecb8f865065516c341d063cba92aed2904b80aa0d0ef65df1b91c400f69d16defad787ff1ffb5edd09e37
+    REF libtorrent-1_2_6
+    SHA512 9f03e28449b08e18a98a1f1bf0571f470c56fabd2becde5bde56ad566611c8519b0b387939f285a552d1f0382446633b67d00b6b5ff7083e4d1420a3ce9232fc
     HEAD_REF master
-)
-
-vcpkg_apply_patches(
-    SOURCE_PATH ${SOURCE_PATH}
     PATCHES
-        ${CMAKE_CURRENT_LIST_DIR}/add-datetime-to-boost-libs.patch
-        ${CMAKE_CURRENT_LIST_DIR}/boost-167.patch
+        add-datetime-to-boost-libs.patch
+        fix_python_cmake.patch
+        ${ICONV_PATCH}
 )
-
-string(COMPARE EQUAL "${VCPKG_LIBRARY_LINKAGE}" "dynamic" LIBTORRENT_SHARED)
-
-file(READ "${SOURCE_PATH}/include/libtorrent/export.hpp" _contents)
-string(REPLACE "<boost/config/select_compiler_config.hpp>" "<boost/config/detail/select_compiler_config.hpp>" _contents "${_contents}")
-string(REPLACE "<boost/config/select_platform_config.hpp>" "<boost/config/detail/select_platform_config.hpp>" _contents "${_contents}")
-file(WRITE "${SOURCE_PATH}/include/libtorrent/export.hpp" "${_contents}")
 
 vcpkg_configure_cmake(
     SOURCE_PATH ${SOURCE_PATH}
     PREFER_NINJA # Disable this option if project cannot be built with Ninja
     OPTIONS
-        -Dshared=${LIBTORRENT_SHARED}
-        -Ddeprecated-functions=off
+        ${FEATURE_OPTIONS}
+        -Dboost-python-module-name=${_boost-python-module-name}
+        -Dstatic_runtime=${_static_runtime}
+        -DOPENSSL_USE_STATIC_LIBS=${_OPENSSL_USE_STATIC_LIBS}
+        -DPython3_USE_STATIC_LIBS=ON
 )
 
 vcpkg_install_cmake()
 
-if (VCPKG_LIBRARY_LINKAGE STREQUAL "dynamic")
-    # Put shared libraries into the proper directory
-    file(MAKE_DIRECTORY ${CURRENT_PACKAGES_DIR}/bin)
-    file(MAKE_DIRECTORY ${CURRENT_PACKAGES_DIR}/debug/bin)
-
-    file(RENAME ${CURRENT_PACKAGES_DIR}/lib/torrent-rasterbar.dll ${CURRENT_PACKAGES_DIR}/bin/torrent-rasterbar.dll)
-    file(RENAME ${CURRENT_PACKAGES_DIR}/debug/lib/torrent-rasterbar.dll ${CURRENT_PACKAGES_DIR}/debug/bin/torrent-rasterbar.dll)
-
-    # Defines for shared lib
-    file(READ ${CURRENT_PACKAGES_DIR}/include/libtorrent/export.hpp EXPORT_H)
-    string(REPLACE "defined TORRENT_BUILDING_SHARED" "1" EXPORT_H "${EXPORT_H}")
-    file(WRITE ${CURRENT_PACKAGES_DIR}/include/libtorrent/export.hpp "${EXPORT_H}")
-endif()
+vcpkg_fixup_cmake_targets(CONFIG_PATH lib/cmake/LibtorrentRasterbar TARGET_PATH share/LibtorrentRasterbar)
 
 # Handle copyright
-file(COPY ${SOURCE_PATH}/LICENSE DESTINATION ${CURRENT_PACKAGES_DIR}/share/libtorrent)
-file(RENAME ${CURRENT_PACKAGES_DIR}/share/libtorrent/LICENSE ${CURRENT_PACKAGES_DIR}/share/libtorrent/copyright)
+file(INSTALL ${SOURCE_PATH}/LICENSE DESTINATION ${CURRENT_PACKAGES_DIR}/share/${PORT} RENAME copyright)
 
 # Do not duplicate include files
-file(REMOVE_RECURSE ${CURRENT_PACKAGES_DIR}/debug/include)
+file(REMOVE_RECURSE ${CURRENT_PACKAGES_DIR}/debug/include ${CURRENT_PACKAGES_DIR}/debug/share ${CURRENT_PACKAGES_DIR}/share/cmake)
